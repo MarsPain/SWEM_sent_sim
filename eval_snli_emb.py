@@ -102,6 +102,8 @@ class Options(object):
 
 def auto_encoder(x_1, x_2, x_mask_1, x_mask_2, y, dropout, opt):
     x_1_emb, W_emb = embedding(x_1, opt)  # batch L emb
+    #这里要注意为什么x_1_emb和x_2_emb的初始化方法不一样，x_2_emb传入的W_emb参数是
+    # x_1_emb生成过程的参数：因为要保证两者同一个词的词向量必须一致？
     x_2_emb = tf.nn.embedding_lookup(W_emb, x_2)
 
     x_1_emb = tf.nn.dropout(x_1_emb, dropout)  # batch L emb
@@ -272,15 +274,15 @@ def main():
                     print("x_labels:", x_labels.shape)
                     x_labels = x_labels.reshape((len(x_labels), opt.category))  #返回one-hot向量？
 
-                    #prepare_data_for_emb函数的作用是什么?
+                    #prepare_data_for_emb函数的作用是什么?初步猜测是sents中每一个单词的索引，然后才能从
                     x_batch_1, x_batch_mask_1 = prepare_data_for_emb(sents_1, opt)
                     x_batch_2, x_batch_mask_2 = prepare_data_for_emb(sents_2, opt)
 
                     _, loss = sess.run([train_op_, loss_], feed_dict={x_1_: x_batch_1, x_2_: x_batch_2,
                                        x_mask_1_: x_batch_mask_1, x_mask_2_: x_batch_mask_2, y_: x_labels, keep_prob: opt.dropout_ratio})
 
+                    #每训练valid_freq个minibatch就在训练集、验证集和测试集上计算准确率，并更新最优测试集准确率
                     if uidx % opt.valid_freq == 0:
-
                         train_correct = 0.0
                         kf_train = get_minibatches_idx(3070, opt.batch_size, shuffle=True)
                         for _, train_index in kf_train:
