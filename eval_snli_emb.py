@@ -72,7 +72,7 @@ class Options(object):
         self.L = 100
         self.encoder = 'max'  # 'max' 'concat'
         self.combine_enc = 'mix'
-        self.category = 3  # '1' for binary
+        self.category = 3  # '1' for binary（语句之间的关系分为三种：蕴含、矛盾、中性）
 
         self.optimizer = 'RMSProp'  # tf.train.AdamOptimizer(beta1=0.9) #'Adam' # 'Momentum' , 'RMSProp'
         self.dropout_ratio = 0.8
@@ -99,7 +99,6 @@ class Options(object):
     def __iter__(self):
         for attr, value in self.__dict__.iteritems():
             yield attr, value
-
 
 def auto_encoder(x_1, x_2, x_mask_1, x_mask_2, y, dropout, opt):
     x_1_emb, W_emb = embedding(x_1, opt)  # batch L emb
@@ -182,14 +181,16 @@ def main():
 
     print(dict(opt))
     print('Total words: %d' % opt.n_words)
-    
+
+    #若partially use labeled data则进行以下操作，这部分操作什么意思？
+    # 目前猜测part_data设置为True时只利用部分训练集，portion就是保留的训练集大小
     if opt.part_data:
         np.random.seed(123)
         train_ind = np.random.choice(len(train_q), int(len(train_q)*opt.portion), replace=False)
         train_q = [train_q[t] for t in train_ind]
         train_a = [train_a[t] for t in train_ind]
         train_lab = [train_lab[t] for t in train_ind]
-
+    #验证训练集和预处理好的词嵌入文件是否对齐
     try:
         params = np.load('./data/snli_emb.p')
         if params[0].shape == (opt.n_words, opt.embed_size):
@@ -205,12 +206,15 @@ def main():
         opt.fix_emb = False
 
     with tf.device('/gpu:1'):
+        #注意训练数据是两批句子，所以x的占位符要成对定义
         x_1_ = tf.placeholder(tf.int32, shape=[opt.batch_size, opt.maxlen])
         x_2_ = tf.placeholder(tf.int32, shape=[opt.batch_size, opt.maxlen])
         x_mask_1_ = tf.placeholder(tf.float32, shape=[opt.batch_size, opt.maxlen])
         x_mask_2_ = tf.placeholder(tf.float32, shape=[opt.batch_size, opt.maxlen])
         y_ = tf.placeholder(tf.float32, shape=[opt.batch_size, opt.category])
         keep_prob = tf.placeholder(tf.float32)
+        #auto_encoder就是模型的定义、模型运行过程中的所有tensor，这个项目将其封装起来了，很值得借鉴的工程技巧
+        # 返回的是一些重要的tensor，后面sess.run的时候作为参数传入
         accuracy_, loss_, train_op_, W_emb_ = auto_encoder(x_1_, x_2_, x_mask_1_, x_mask_2_, y_, keep_prob, opt)
         merged = tf.summary.merge_all()
 
@@ -228,7 +232,7 @@ def main():
         train_writer = tf.summary.FileWriter(opt.log_path + '/train', sess.graph)
         test_writer = tf.summary.FileWriter(opt.log_path + '/test', sess.graph)
         sess.run(tf.global_variables_initializer())
-        if opt.restore:
+        if opt.restore: #若使用已保存好的参数
             try:
                 #pdb.set_trace()
                 t_vars = tf.trainable_variables()
@@ -257,16 +261,18 @@ def main():
         try:
             for epoch in range(opt.max_epochs):
                 print("Starting epoch %d" % epoch)
-                kf = get_minibatches_idx(len(train_q), opt.batch_size, shuffle=True)
+                kf = get_minibatches_idx(len(train_q), opt.batch_size, shuffle=True)    #随机创建minibatch数据
                 for _, train_index in kf:
 
                     uidx += 1
-                    sents_1 = [train_q[t] for t in train_index]
+                    sents_1 = [train_q[t] for t in train_index] #根据索引回到总数据集中寻找相应数据
                     sents_2 = [train_a[t] for t in train_index]
                     x_labels = [train_lab[t] for t in train_index]
                     x_labels = np.array(x_labels)
-                    x_labels = x_labels.reshape((len(x_labels), opt.category))
+                    print("x_labels:", x_labels.shape)
+                    x_labels = x_labels.reshape((len(x_labels), opt.category))  #返回one-hot向量？
 
+                    #prepare_data_for_emb函数的作用是什么?
                     x_batch_1, x_batch_mask_1 = prepare_data_for_emb(sents_1, opt)
                     x_batch_2, x_batch_mask_2 = prepare_data_for_emb(sents_2, opt)
 
