@@ -101,6 +101,7 @@ class Options(object):
             yield attr, value
 
 def auto_encoder(x_1, x_2, x_mask_1, x_mask_2, y, dropout, opt):
+    #为何没有如论文中所说引入glove词向量？
     x_1_emb, W_emb = embedding(x_1, opt)  # batch L emb
     #这里要注意为什么x_1_emb和x_2_emb的初始化方法不一样，x_2_emb传入的W_emb参数是
     # x_1_emb生成过程的参数：因为要保证两者同一个词的词向量必须一致？
