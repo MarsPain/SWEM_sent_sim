@@ -275,7 +275,7 @@ def main():
                     print("x_labels:", x_labels.shape)
                     x_labels = x_labels.reshape((len(x_labels), opt.category))  #返回one-hot向量？
 
-                    #prepare_data_for_emb函数的作用是什么?初步猜测是sents中每一个单词的索引，然后才能从
+                    #prepare_data_for_emb函数的作用是什么?初步猜测是把sents中每一个单词替换成相应的索引，然后才能根据索引获取词向量
                     x_batch_1, x_batch_mask_1 = prepare_data_for_emb(sents_1, opt)
                     x_batch_2, x_batch_mask_2 = prepare_data_for_emb(sents_2, opt)
 

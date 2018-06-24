@@ -113,7 +113,7 @@ def discriminator_0layer(H, opt, dropout, prefix='', num_outputs=1, is_reuse=Non
     return logits
 
 
-def linear_layer(x, output_dim):
+def linear_layer(x, output_dim, prefix=''):
     input_dim = x.get_shape().as_list()[1]
     thres = np.sqrt(6.0 / (input_dim + output_dim))
     W = tf.get_variable("W", [input_dim, output_dim], scope=prefix + '_W',
