@@ -82,7 +82,7 @@ class Options(object):
         self.L = 100
         self.encoder = 'max'  # 'max' 'concat'
         self.combine_enc = 'mix'
-        self.category = 3  # '1' for binary（语句之间的关系分为三种：蕴含、矛盾、中性）
+        self.category = 1  # '1' for binary（语句之间的关系分为三种：蕴含、矛盾、中性）
 
         self.optimizer = 'RMSProp'  # tf.train.AdamOptimizer(beta1=0.9) #'Adam' # 'Momentum' , 'RMSProp'
         self.dropout_ratio = 0.8
@@ -188,7 +188,7 @@ def main():
     opt = Options()
     vocabulary_word2index, vocabulary_index2word, vocabulary_label2index, vocabulary_index2label = create_vocabulary(
         "data/atec_nlp_sim_train2.csv", opt.vocab_size,
-        name_scope=FLAGS.name_scope, tokenize_style=opt.tokenize_style)
+        name_scope=opt.name_scope, tokenize_style=opt.tokenize_style)
     vocab_size = len(vocabulary_word2index);
     print("vocab_size:", vocab_size)
     num_classes = len(vocabulary_index2label);
@@ -311,8 +311,8 @@ def main():
                     sents_2 = [train_a[t] for t in train_index]
                     x_labels = [train_lab[t] for t in train_index]
                     x_labels = np.array(x_labels)
-                    print("x_labels:", x_labels.shape)
-                    x_labels = x_labels.reshape((len(x_labels), opt.category))  #返回one-hot向量？
+                    # print("x_labels:", x_labels.shape)
+                    x_labels = x_labels.reshape((len(x_labels), opt.category))  #为何要在这里进行reshape
 
                     #prepare_data_for_emb函数的作用是什么?初步猜测是把sents中每一个单词替换成相应的索引，然后才能根据索引获取词向量
                     x_batch_1, x_batch_mask_1 = prepare_data_for_emb(sents_1, opt)
