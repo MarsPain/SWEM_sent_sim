@@ -321,92 +321,164 @@ def main():
                     x_batch_1, x_batch_mask_1 = prepare_data_for_emb(sents_1, opt)
                     x_batch_2, x_batch_mask_2 = prepare_data_for_emb(sents_2, opt)
 
-                    _, loss = sess.run([train_op_, loss_], feed_dict={x_1_: x_batch_1, x_2_: x_batch_2,
+                    _, loss, train_accuracy = sess.run([train_op_, loss_, accuracy_], feed_dict={x_1_: x_batch_1, x_2_: x_batch_2,
                                        x_mask_1_: x_batch_mask_1, x_mask_2_: x_batch_mask_2, y_: x_labels, keep_prob: opt.dropout_ratio})
 
-                    #每训练valid_freq个minibatch就在训练集、验证集和测试集上计算准确率，并更新最优测试集准确率
+                    if uidx % 100 == 0:
+                        print("Epoch %d\tBatch %d\tTrain Loss:%.3f\tAcc:%.3f\t" % (epoch, uidx, loss/float(uidx), uidx/float(uidx)))
+
                     if uidx % opt.valid_freq == 0:
-                        train_correct = 0.0
-                        kf_train = get_minibatches_idx(3070, opt.batch_size, shuffle=True)
-                        for _, train_index in kf_train:
-                            train_sents_1 = [train_q[t] for t in train_index]
-                            train_sents_2 = [train_a[t] for t in train_index]
-                            train_labels = [train_lab[t] for t in train_index]
-                            train_labels = np.array(train_labels)
-                            # print("train_labels", train_labels.shape)
-                            # train_labels = train_labels.reshape((len(train_labels), opt.category))
-                            train_labels = np.eye(opt.category)[train_labels]
-                            x_train_batch_1, x_train_mask_1 = prepare_data_for_emb(train_sents_1, opt)
-                            x_train_batch_2, x_train_mask_2 = prepare_data_for_emb(train_sents_2, opt)
+                        # do_eval参数待修改
+                        eval_loss, eval_accc, f1_scoree, precision, recall, weights_label = do_eval(sess, textCNN,
+                                                                                                    validX1, validX2,
+                                                                                                    validBlueScores,
+                                                                                                    validY, iteration,
+                                                                                                    vocabulary_index2word)
+                        # weights_dict = get_weights_label_as_standard_dict(weights_label)
+                        # print("label accuracy(used for label weight):==========>>>>", weights_dict)
+                        print("【Validation】Epoch %d\t Loss:%.3f\tAcc %.3f\tF1 Score:%.3f\tPrecision:%.3f\tRecall:%.3f" % (
+                            epoch, eval_loss, eval_accc, f1_scoree, precision, recall))
+                        # save model to checkpoint
+                        if eval_accc * 1.05 > best_acc and f1_scoree > best_f1_score:
+                            save_path = opt.ckpt_dir + "/model.ckpt"
+                            print("going to save model. eval_f1_score:", f1_scoree, ";previous best f1 score:", best_f1_score,
+                                  ";eval_acc", str(eval_accc), ";previous best_acc:", str(best_acc))
+                            saver.save(sess, save_path, global_step=epoch)
+                            best_acc = eval_accc
+                            best_f1_score = f1_scoree
 
-                            train_accuracy = sess.run(accuracy_,
-                                                      feed_dict={x_1_: x_train_batch_1, x_2_: x_train_batch_2, x_mask_1_: x_train_mask_1, x_mask_2_: x_train_mask_2,
-                                                                 y_: train_labels, keep_prob: 1.0})
-
-                            train_correct += train_accuracy * len(train_index)
-
-                        train_accuracy = train_correct / 3070
-
-                        # print("Iteration %d: Training loss %f, dis loss %f, rec loss %f" % (uidx,
-                        #                                                                     loss, dis_loss, rec_loss))
-                        print("Train accuracy %f " % train_accuracy)
-
-                        val_correct = 0.0
-                        is_train = True
-                        kf_val = get_minibatches_idx(len(val_q), opt.batch_size, shuffle=True)
-                        for _, val_index in kf_val:
-                            val_sents_1 = [val_q[t] for t in val_index]
-                            val_sents_2 = [val_a[t] for t in val_index]
-                            val_labels = [val_lab[t] for t in val_index]
-                            val_labels = np.array(val_labels)
-                            # val_labels = val_labels.reshape((len(val_labels), opt.category))
-                            val_labels = np.eye(opt.category)[val_labels]
-                            x_val_batch_1, x_val_mask_1 = prepare_data_for_emb(val_sents_1, opt)
-                            x_val_batch_2, x_val_mask_2 = prepare_data_for_emb(val_sents_2, opt)
-
-                            val_accuracy = sess.run(accuracy_, feed_dict={x_1_: x_val_batch_1, x_2_: x_val_batch_2,
-                                                                          x_mask_1_: x_val_mask_1, x_mask_2_: x_val_mask_2, y_: val_labels, keep_prob: 1.0})
-
-                            val_correct += val_accuracy * len(val_index)
-
-                        val_accuracy = val_correct / len(val_q)
-
-                        print("Validation accuracy %f " % val_accuracy)
-
-                        if val_accuracy > max_val_accuracy:
-                            max_val_accuracy = val_accuracy
-
-                            test_correct = 0.0
-                            kf_test = get_minibatches_idx(len(test_q), opt.batch_size, shuffle=True)
-                            for _, test_index in kf_test:
-                                test_sents_1 = [test_q[t] for t in test_index]
-                                test_sents_2 = [test_a[t] for t in test_index]
-                                test_labels = [test_lab[t] for t in test_index]
-                                test_labels = np.array(test_labels)
-                                # test_labels = test_labels.reshape((len(test_labels), opt.category))
-                                test_labels = np.eye(opt.category)[test_labels]
-                                x_test_batch_1, x_test_mask_1 = prepare_data_for_emb(test_sents_1, opt)
-                                x_test_batch_2, x_test_mask_2 = prepare_data_for_emb(test_sents_2, opt)
-
-                                test_accuracy = sess.run(accuracy_, feed_dict={x_1_: x_test_batch_1, x_2_: x_test_batch_2,
-                                                                               x_mask_1_: x_test_mask_1, x_mask_2_: x_test_mask_2,
-                                                                               y_: test_labels, keep_prob: 1.0})
-
-                                test_correct += test_accuracy * len(test_index)
-
-                            test_accuracy = test_correct / len(test_q)
-
-                            print("Test accuracy %f " % test_accuracy)
-
-                            max_test_accuracy = test_accuracy
-
-                print("Epoch %d: Max Test accuracy %f" % (epoch, max_test_accuracy))
-
-            print("Max Test accuracy %f " % max_test_accuracy)
+                    #每训练valid_freq个minibatch就在训练集、验证集和测试集上计算准确率，并更新最优测试集准确率
+            #         if uidx % opt.valid_freq == 0:
+            #             train_correct = 0.0
+            #             kf_train = get_minibatches_idx(len(train_q), opt.batch_size, shuffle=True)
+            #             for _, train_index in kf_train:
+            #                 train_sents_1 = [train_q[t] for t in train_index]
+            #                 train_sents_2 = [train_a[t] for t in train_index]
+            #                 train_labels = [train_lab[t] for t in train_index]
+            #                 train_labels = np.array(train_labels)
+            #                 # print("train_labels", train_labels.shape)
+            #                 # train_labels = train_labels.reshape((len(train_labels), opt.category))
+            #                 train_labels = np.eye(opt.category)[train_labels]
+            #                 x_train_batch_1, x_train_mask_1 = prepare_data_for_emb(train_sents_1, opt)
+            #                 x_train_batch_2, x_train_mask_2 = prepare_data_for_emb(train_sents_2, opt)
+            #
+            #                 train_accuracy = sess.run(accuracy_,
+            #                                           feed_dict={x_1_: x_train_batch_1, x_2_: x_train_batch_2, x_mask_1_: x_train_mask_1, x_mask_2_: x_train_mask_2,
+            #                                                      y_: train_labels, keep_prob: 1.0})
+            #
+            #                 train_correct += train_accuracy * len(train_index)
+            #
+            #             train_accuracy = train_correct / len(train_q)
+            #
+            #             # print("Iteration %d: Training loss %f, dis loss %f, rec loss %f" % (uidx,
+            #             #                                                                     loss, dis_loss, rec_loss))
+            #             print("Train accuracy %f " % train_accuracy)
+            #
+            #             val_correct = 0.0
+            #             is_train = True
+            #             kf_val = get_minibatches_idx(len(val_q), opt.batch_size, shuffle=True)
+            #             for _, val_index in kf_val:
+            #                 val_sents_1 = [val_q[t] for t in val_index]
+            #                 val_sents_2 = [val_a[t] for t in val_index]
+            #                 val_labels = [val_lab[t] for t in val_index]
+            #                 val_labels = np.array(val_labels)
+            #                 # val_labels = val_labels.reshape((len(val_labels), opt.category))
+            #                 val_labels = np.eye(opt.category)[val_labels]
+            #                 x_val_batch_1, x_val_mask_1 = prepare_data_for_emb(val_sents_1, opt)
+            #                 x_val_batch_2, x_val_mask_2 = prepare_data_for_emb(val_sents_2, opt)
+            #
+            #                 val_accuracy = sess.run(accuracy_, feed_dict={x_1_: x_val_batch_1, x_2_: x_val_batch_2,
+            #                                                               x_mask_1_: x_val_mask_1, x_mask_2_: x_val_mask_2, y_: val_labels, keep_prob: 1.0})
+            #
+            #                 val_correct += val_accuracy * len(val_index)
+            #
+            #             val_accuracy = val_correct / len(val_q)
+            #
+            #             print("Validation accuracy %f " % val_accuracy)
+            #
+            #             if val_accuracy > max_val_accuracy:
+            #                 max_val_accuracy = val_accuracy
+            #
+            #                 test_correct = 0.0
+            #                 kf_test = get_minibatches_idx(len(test_q), opt.batch_size, shuffle=True)
+            #                 for _, test_index in kf_test:
+            #                     test_sents_1 = [test_q[t] for t in test_index]
+            #                     test_sents_2 = [test_a[t] for t in test_index]
+            #                     test_labels = [test_lab[t] for t in test_index]
+            #                     test_labels = np.array(test_labels)
+            #                     # test_labels = test_labels.reshape((len(test_labels), opt.category))
+            #                     test_labels = np.eye(opt.category)[test_labels]
+            #                     x_test_batch_1, x_test_mask_1 = prepare_data_for_emb(test_sents_1, opt)
+            #                     x_test_batch_2, x_test_mask_2 = prepare_data_for_emb(test_sents_2, opt)
+            #
+            #                     test_accuracy = sess.run(accuracy_, feed_dict={x_1_: x_test_batch_1, x_2_: x_test_batch_2,
+            #                                                                    x_mask_1_: x_test_mask_1, x_mask_2_: x_test_mask_2,
+            #                                                                    y_: test_labels, keep_prob: 1.0})
+            #
+            #                     test_correct += test_accuracy * len(test_index)
+            #
+            #                 test_accuracy = test_correct / len(test_q)
+            #
+            #                 print("Test accuracy %f " % test_accuracy)
+            #
+            #                 max_test_accuracy = test_accuracy
+            #
+            #     print("Epoch %d: Max Test accuracy %f" % (epoch, max_test_accuracy))
+            #
+            # print("Max Test accuracy %f " % max_test_accuracy)
 
         except KeyboardInterrupt:
             print('Training interupted')
             print("Max Test accuracy %f " % max_test_accuracy)
+
+def do_eval(sess,textCNN,evalX1,evalX2,evalBlueScores,evalY,iteration,vocabulary_index2word):
+    number_examples=len(evalX1)
+    print("valid examples:",number_examples)
+    eval_loss,eval_accc,eval_counter=0.0,0.0,0
+    eval_true_positive, eval_false_positive, eval_true_negative, eval_false_negative=0,0,0,0
+    batch_size=1
+    weights_label = {}  # weight_label[label_index]=(number,correct)
+    weights = np.ones((batch_size))
+    for start,end in zip(range(0,number_examples,batch_size),range(batch_size,number_examples,batch_size)):
+        #feed_dict和run需要修改
+        feed_dict = {textCNN.input_x1: evalX1[start:end],textCNN.input_x2: evalX2[start:end], textCNN.input_bluescores:evalBlueScores[start:end],textCNN.input_y:evalY[start:end],
+                     textCNN.weights:weights,textCNN.dropout_keep_prob: 1.0,textCNN.iter: iteration,textCNN.tst: True}
+        curr_eval_loss,curr_accc, logits= sess.run([textCNN.loss_val,textCNN.accuracy,textCNN.logits],feed_dict)#curr_eval_acc--->textCNN.accuracy
+        true_positive, false_positive, true_negative, false_negative=compute_confuse_matrix(logits[0], evalY[start:end][0]) #logits:[batch_size,label_size]-->logits[0]:[label_size]
+        # write_predict_error_to_file(start,file_object,logits[0], evalY[start:end][0],vocabulary_index2word,evalX1[start:end],evalX2[start:end])
+        eval_loss,eval_accc,eval_counter=eval_loss+curr_eval_loss,eval_accc+curr_accc,eval_counter+1
+        eval_true_positive,eval_false_positive=eval_true_positive+true_positive,eval_false_positive+false_positive
+        eval_true_negative,eval_false_negative=eval_true_negative+true_negative,eval_false_negative+false_negative
+        # weights_label = compute_labels_weights(weights_label, logits, evalY[start:end]) #compute_labels_weights(weights_label,logits,labels)
+    print("true_positive:",eval_true_positive,";false_positive:",eval_false_positive,";true_negative:",eval_true_negative,";false_negative:",eval_false_negative)
+    p=float(eval_true_positive)/float(eval_true_positive+eval_false_positive)
+    r=float(eval_true_positive)/float(eval_true_positive+eval_false_negative)
+    f1_score=(2*p*r)/(p+r)
+    print("eval_counter:",eval_counter,";eval_acc:",eval_accc)
+    return eval_loss/float(eval_counter),eval_accc/float(eval_counter),f1_score,p,r,weights_label
+
+def compute_confuse_matrix(logit, label):
+    """
+    compoute f1_score.
+    :param logits: [batch_size,label_size]
+    :param evalY: [batch_size,label_size]
+    :return:
+    """
+    predict=np.argmax(logit)
+    true_positive=0  #TP:if label is true('1'), and predict is true('1')
+    false_positive=0 #FP:if label is false('0'),but predict is ture('1')
+    true_negative=0  #TN:if label is false('0'),and predict is false('0')
+    false_negative=0 #FN:if label is false('0'),but predict is true('1')
+    if predict==1 and label==1:
+        true_positive=1
+    elif predict==1 and label==0:
+        false_positive=1
+    elif predict==0 and label==0:
+        true_negative=1
+    elif predict==0 and label==1:
+        false_negative=1
+
+    return true_positive,false_positive,true_negative,false_negative
 
 if __name__ == '__main__':
     main()
