@@ -82,7 +82,7 @@ class Options(object):
         self.L = 100
         self.encoder = 'max'  # 'max' 'concat'
         self.combine_enc = 'mix'
-        self.category = 1  # '1' for binary（语句之间的关系分为三种：蕴含、矛盾、中性）
+        self.category = 2  # '1' for binary（语句之间的关系分为三种：蕴含、矛盾、中性）
 
         self.optimizer = 'RMSProp'  # tf.train.AdamOptimizer(beta1=0.9) #'Adam' # 'Momentum' , 'RMSProp'
         self.dropout_ratio = 0.8
@@ -312,7 +312,10 @@ def main():
                     x_labels = [train_lab[t] for t in train_index]
                     x_labels = np.array(x_labels)
                     # print("x_labels:", x_labels.shape)
-                    x_labels = x_labels.reshape((len(x_labels), opt.category))  #为何要在这里进行reshape
+                    # 为何要在这里进行reshape,是想进行onehot操作？但是这明显是错误的，((len(x_labels),))怎么能reshape成((len(x_labels),opt.category))
+                    # x_labels = x_labels.reshape((len(x_labels),opt.category))
+                    # one-hot向量化
+                    x_labels = np.eye(opt.category)[x_labels]
 
                     #prepare_data_for_emb函数的作用是什么?初步猜测是把sents中每一个单词替换成相应的索引，然后才能根据索引获取词向量
                     x_batch_1, x_batch_mask_1 = prepare_data_for_emb(sents_1, opt)
@@ -330,7 +333,9 @@ def main():
                             train_sents_2 = [train_a[t] for t in train_index]
                             train_labels = [train_lab[t] for t in train_index]
                             train_labels = np.array(train_labels)
-                            train_labels = train_labels.reshape((len(train_labels), opt.category))
+                            # print("train_labels", train_labels.shape)
+                            # train_labels = train_labels.reshape((len(train_labels), opt.category))
+                            train_labels = np.eye(opt.category)[train_labels]
                             x_train_batch_1, x_train_mask_1 = prepare_data_for_emb(train_sents_1, opt)
                             x_train_batch_2, x_train_mask_2 = prepare_data_for_emb(train_sents_2, opt)
 
@@ -354,7 +359,8 @@ def main():
                             val_sents_2 = [val_a[t] for t in val_index]
                             val_labels = [val_lab[t] for t in val_index]
                             val_labels = np.array(val_labels)
-                            val_labels = val_labels.reshape((len(val_labels), opt.category))
+                            # val_labels = val_labels.reshape((len(val_labels), opt.category))
+                            val_labels = np.eye(opt.category)[val_labels]
                             x_val_batch_1, x_val_mask_1 = prepare_data_for_emb(val_sents_1, opt)
                             x_val_batch_2, x_val_mask_2 = prepare_data_for_emb(val_sents_2, opt)
 
@@ -377,7 +383,8 @@ def main():
                                 test_sents_2 = [test_a[t] for t in test_index]
                                 test_labels = [test_lab[t] for t in test_index]
                                 test_labels = np.array(test_labels)
-                                test_labels = test_labels.reshape((len(test_labels), opt.category))
+                                # test_labels = test_labels.reshape((len(test_labels), opt.category))
+                                test_labels = np.eye(opt.category)[test_labels]
                                 x_test_batch_1, x_test_mask_1 = prepare_data_for_emb(test_sents_1, opt)
                                 x_test_batch_2, x_test_mask_2 = prepare_data_for_emb(test_sents_2, opt)
 
