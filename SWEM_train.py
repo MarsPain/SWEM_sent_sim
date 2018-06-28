@@ -446,7 +446,7 @@ def do_eval(sess,textCNN,evalX1,evalX2,evalBlueScores,evalY,iteration,vocabulary
         curr_eval_loss,curr_accc, logits= sess.run([textCNN.loss_val,textCNN.accuracy,textCNN.logits],feed_dict)#curr_eval_acc--->textCNN.accuracy
         true_positive, false_positive, true_negative, false_negative=compute_confuse_matrix(logits[0], evalY[start:end][0]) #logits:[batch_size,label_size]-->logits[0]:[label_size]
         # write_predict_error_to_file(start,file_object,logits[0], evalY[start:end][0],vocabulary_index2word,evalX1[start:end],evalX2[start:end])
-        eval_loss,eval_accc,eval_counter=eval_loss+curr_eval_loss,eval_accc+curr_accc,eval_counter+1
+        eval_loss,eval_accc,eval_counter=eval_loss+curr_eval_loss,eval_accc+curr_accc,eval_counter+1    #注意这里计算loss和accc的方法，计算累加值，然后归一化
         eval_true_positive,eval_false_positive=eval_true_positive+true_positive,eval_false_positive+false_positive
         eval_true_negative,eval_false_negative=eval_true_negative+true_negative,eval_false_negative+false_negative
         # weights_label = compute_labels_weights(weights_label, logits, evalY[start:end]) #compute_labels_weights(weights_label,logits,labels)
