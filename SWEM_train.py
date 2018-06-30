@@ -20,6 +20,7 @@ import gensim
 from gensim.models import KeyedVectors
 import cPickle
 import os
+import pickle
 GPUID = 0
 os.environ['CUDA_VISIBLE_DEVICES'] = str(GPUID)
 import tensorflow as tf
@@ -108,7 +109,7 @@ class Options(object):
         self.model_name = "SWEM"
         self.name_scope = "SWEM_1"
         self.tokenize_style = "word"
-        self.traning_data_path = "data/atec_nlp_sim_train2.csv"
+        self.traning_data_path = "data/atec_nlp_sim_train_data.csv"
         self.sentence_len = 39
         self.vocab_size = 80000
         self.num_epochs = 10
@@ -193,10 +194,10 @@ def main():
     print("vocab_size:", vocab_size)
     num_classes = len(vocabulary_index2label);
     print("num_classes:", num_classes)
-    train, valid, test, true_label_percent = load_data(opt.traning_data_path, vocabulary_word2index,
-                                                       vocabulary_label2index, opt.sentence_len, opt.name_scope,
-                                                       tokenize_style=opt.tokenize_style)
+    with open("./data/data_v1") as f:
+        train, valid, test, true_label_percent = pickle.load(f)
     train_q, train_a, _, train_lab = train
+    print("train_nums:", len(train_q))
     val_q, val_a, _, val_lab = valid
     test_q, test_a, _, test_lab = test
     wordtoix = vocabulary_word2index; ixtoword = vocabulary_index2word
@@ -289,9 +290,9 @@ def main():
             # weights_label = compute_labels_weights(weights_label, logits, evalY[start:end]) #compute_labels_weights(weights_label,logits,labels)
         print("true_positive:", eval_true_positive, ";false_positive:", eval_false_positive, ";true_negative:",
               eval_true_negative, ";false_negative:", eval_false_negative)
-        p = float(eval_true_positive) / float(eval_true_positive + eval_false_positive+1)
-        r = float(eval_true_positive) / float(eval_true_positive + eval_false_negative+1)
-        f1_score = (2 * p * r) / (p + r + 1)
+        p = float(eval_true_positive) / float(eval_true_positive + eval_false_positive)
+        r = float(eval_true_positive) / float(eval_true_positive + eval_false_negative)
+        f1_score = (2 * p * r) / (p + r)
         print("eval_counter:", eval_counter, ";eval_acc:", eval_accc)
         return eval_loss / float(eval_counter), eval_accc / float(eval_counter), f1_score, p, r
 
@@ -363,21 +364,21 @@ def main():
                     if uidx % 100 == 0:
                         print("Epoch %d\tBatch %d\tTrain Loss:%.3f\tAcc:%.3f\t" % (epoch, uidx, loss/float(uidx), acc/float(uidx)))
 
-                    if uidx % opt.valid_freq == 0:
-                        # do_eval参数待修改
-                        eval_loss, eval_accc, f1_scoree, precision, recall = do_eval(sess, train_q, train_a, train_lab)
-                        # weights_dict = get_weights_label_as_standard_dict(weights_label)
-                        # print("label accuracy(used for label weight):==========>>>>", weights_dict)
-                        print("【Validation】Epoch %d\t Loss:%.3f\tAcc %.3f\tF1 Score:%.3f\tPrecision:%.3f\tRecall:%.3f" % (
-                            epoch, eval_loss, eval_accc, f1_scoree, precision, recall))
-                        # save model to checkpoint
-                        if eval_accc > best_acc and f1_scoree > best_f1_score:
-                            save_path = opt.ckpt_dir + "/model.ckpt"
-                            print("going to save model. eval_f1_score:", f1_scoree, ";previous best f1 score:", best_f1_score,
-                                  ";eval_acc", str(eval_accc), ";previous best_acc:", str(best_acc))
-                            saver.save(sess, save_path, global_step=epoch)
-                            best_acc = eval_accc
-                            best_f1_score = f1_scoree
+                if epoch % 1 == 0:
+                    # do_eval参数待修改
+                    eval_loss, eval_accc, f1_scoree, precision, recall = do_eval(sess, train_q, train_a, train_lab)
+                    # weights_dict = get_weights_label_as_standard_dict(weights_label)
+                    # print("label accuracy(used for label weight):==========>>>>", weights_dict)
+                    print("【Validation】Epoch %d\t Loss:%.3f\tAcc %.3f\tF1 Score:%.3f\tPrecision:%.3f\tRecall:%.3f" % (
+                        epoch, eval_loss, eval_accc, f1_scoree, precision, recall))
+                    # save model to checkpoint
+                    if eval_accc > best_acc and f1_scoree > best_f1_score:
+                        save_path = opt.ckpt_dir + "/model.ckpt"
+                        print("going to save model. eval_f1_score:", f1_scoree, ";previous best f1 score:", best_f1_score,
+                              ";eval_acc", str(eval_accc), ";previous best_acc:", str(best_acc))
+                        saver.save(sess, save_path, global_step=epoch)
+                        best_acc = eval_accc
+                        best_f1_score = f1_scoree
 
                     #每训练valid_freq个minibatch就在训练集、验证集和测试集上计算准确率，并更新最优测试集准确率
             #         if uidx % opt.valid_freq == 0:
