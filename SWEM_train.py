@@ -182,7 +182,7 @@ def auto_encoder(x_1, x_2, x_mask_1, x_mask_2, y, dropout, opt):
         # variables=d_vars,
         learning_rate=opt.lr)
 
-    return accuracy, loss, train_op, W_emb
+    return accuracy, loss, train_op, W_emb, prob
 
 def main():
     opt = Options()
@@ -257,8 +257,43 @@ def main():
         keep_prob = tf.placeholder(tf.float32)
         #auto_encoder就是模型的定义、模型运行过程中的所有tensor，这个项目将其封装起来了，很值得借鉴的工程技巧
         # 返回的是一些重要的tensor，后面sess.run的时候作为参数传入
-        accuracy_, loss_, train_op_, W_emb_ = auto_encoder(x_1_, x_2_, x_mask_1_, x_mask_2_, y_, keep_prob, opt)
+        accuracy_, loss_, train_op_, W_emb, logits_ = auto_encoder(x_1_, x_2_, x_mask_1_, x_mask_2_, y_, keep_prob, opt)
         merged = tf.summary.merge_all()
+
+    def do_eval(sess, train_q, train_a, train_lab):
+        train_correct = 0.0
+        # number_examples = len(train_q)
+        # print("valid examples:", number_examples)
+        eval_loss, eval_accc, eval_counter = 0.0, 0.0, 0
+        eval_true_positive, eval_false_positive, eval_true_negative, eval_false_negative = 0, 0, 0, 0
+        # batch_size = 1
+        kf_train = get_minibatches_idx(len(train_q), opt.batch_size, shuffle=True)
+        for _, train_index in kf_train:
+            train_sents_1 = [train_q[t] for t in train_index]
+            train_sents_2 = [train_a[t] for t in train_index]
+            train_labels = [train_lab[t] for t in train_index]
+            train_labels = np.array(train_labels)
+            # print("train_labels", train_labels.shape)
+            # train_labels = train_labels.reshape((len(train_labels), opt.category))
+            train_labels = np.eye(opt.category)[train_labels]
+            x_train_batch_1, x_train_mask_1 = prepare_data_for_emb(train_sents_1, opt)
+            x_train_batch_2, x_train_mask_2 = prepare_data_for_emb(train_sents_2, opt)
+
+            curr_eval_loss, curr_accc, logits = sess.run([loss_, accuracy_, logits_],feed_dict={x_1_: x_train_batch_1, x_2_: x_train_batch_2, x_mask_1_: x_train_mask_1, x_mask_2_: x_train_mask_2,
+                                                           y_: train_labels, keep_prob: 1.0})
+            true_positive, false_positive, true_negative, false_negative = compute_confuse_matrix(logits, train_labels)  # logits:[batch_size,label_size]-->logits[0]:[label_size]
+            # write_predict_error_to_file(start,file_object,logits[0], evalY[start:end][0],vocabulary_index2word,evalX1[start:end],evalX2[start:end])
+            eval_loss, eval_accc, eval_counter = eval_loss + curr_eval_loss, eval_accc + curr_accc, eval_counter + 1  # 注意这里计算loss和accc的方法，计算累加值，然后归一化
+            eval_true_positive, eval_false_positive = eval_true_positive + true_positive, eval_false_positive + false_positive
+            eval_true_negative, eval_false_negative = eval_true_negative + true_negative, eval_false_negative + false_negative
+            # weights_label = compute_labels_weights(weights_label, logits, evalY[start:end]) #compute_labels_weights(weights_label,logits,labels)
+        print("true_positive:", eval_true_positive, ";false_positive:", eval_false_positive, ";true_negative:",
+              eval_true_negative, ";false_negative:", eval_false_negative)
+        p = float(eval_true_positive) / float(eval_true_positive + eval_false_positive+1)
+        r = float(eval_true_positive) / float(eval_true_positive + eval_false_negative+1)
+        f1_score = (2 * p * r) / (p + r + 1)
+        print("eval_counter:", eval_counter, ";eval_acc:", eval_accc)
+        return eval_loss / float(eval_counter), eval_accc / float(eval_counter), f1_score, p, r
 
     uidx = 0
     max_val_accuracy = 0.
@@ -301,11 +336,12 @@ def main():
                 sess.run(tf.global_variables_initializer())
 
         try:
+            best_acc = 2.0; best_f1_score = 2.0
             for epoch in range(opt.max_epochs):
                 print("Starting epoch %d" % epoch)
+                loss, acc = 0.0, 0.0
                 kf = get_minibatches_idx(len(train_q), opt.batch_size, shuffle=True)    #随机创建minibatch数据
                 for _, train_index in kf:
-
                     uidx += 1
                     sents_1 = [train_q[t] for t in train_index] #根据索引回到总数据集中寻找相应数据
                     sents_2 = [train_a[t] for t in train_index]
@@ -321,25 +357,21 @@ def main():
                     x_batch_1, x_batch_mask_1 = prepare_data_for_emb(sents_1, opt)
                     x_batch_2, x_batch_mask_2 = prepare_data_for_emb(sents_2, opt)
 
-                    _, loss, train_accuracy = sess.run([train_op_, loss_, accuracy_], feed_dict={x_1_: x_batch_1, x_2_: x_batch_2,
+                    _, curr_loss, curr_accuracy = sess.run([train_op_, loss_, accuracy_], feed_dict={x_1_: x_batch_1, x_2_: x_batch_2,
                                        x_mask_1_: x_batch_mask_1, x_mask_2_: x_batch_mask_2, y_: x_labels, keep_prob: opt.dropout_ratio})
-
+                    loss, acc = loss + curr_loss, acc + curr_accuracy
                     if uidx % 100 == 0:
-                        print("Epoch %d\tBatch %d\tTrain Loss:%.3f\tAcc:%.3f\t" % (epoch, uidx, loss/float(uidx), uidx/float(uidx)))
+                        print("Epoch %d\tBatch %d\tTrain Loss:%.3f\tAcc:%.3f\t" % (epoch, uidx, loss/float(uidx), acc/float(uidx)))
 
                     if uidx % opt.valid_freq == 0:
                         # do_eval参数待修改
-                        eval_loss, eval_accc, f1_scoree, precision, recall, weights_label = do_eval(sess, textCNN,
-                                                                                                    validX1, validX2,
-                                                                                                    validBlueScores,
-                                                                                                    validY, iteration,
-                                                                                                    vocabulary_index2word)
+                        eval_loss, eval_accc, f1_scoree, precision, recall = do_eval(sess, train_q, train_a, train_lab)
                         # weights_dict = get_weights_label_as_standard_dict(weights_label)
                         # print("label accuracy(used for label weight):==========>>>>", weights_dict)
                         print("【Validation】Epoch %d\t Loss:%.3f\tAcc %.3f\tF1 Score:%.3f\tPrecision:%.3f\tRecall:%.3f" % (
                             epoch, eval_loss, eval_accc, f1_scoree, precision, recall))
                         # save model to checkpoint
-                        if eval_accc * 1.05 > best_acc and f1_scoree > best_f1_score:
+                        if eval_accc > best_acc and f1_scoree > best_f1_score:
                             save_path = opt.ckpt_dir + "/model.ckpt"
                             print("going to save model. eval_f1_score:", f1_scoree, ";previous best f1 score:", best_f1_score,
                                   ";eval_acc", str(eval_accc), ";previous best_acc:", str(best_acc))
@@ -431,32 +463,6 @@ def main():
             print('Training interupted')
             print("Max Test accuracy %f " % max_test_accuracy)
 
-def do_eval(sess,textCNN,evalX1,evalX2,evalBlueScores,evalY,iteration,vocabulary_index2word):
-    number_examples=len(evalX1)
-    print("valid examples:",number_examples)
-    eval_loss,eval_accc,eval_counter=0.0,0.0,0
-    eval_true_positive, eval_false_positive, eval_true_negative, eval_false_negative=0,0,0,0
-    batch_size=1
-    weights_label = {}  # weight_label[label_index]=(number,correct)
-    weights = np.ones((batch_size))
-    for start,end in zip(range(0,number_examples,batch_size),range(batch_size,number_examples,batch_size)):
-        #feed_dict和run需要修改
-        feed_dict = {textCNN.input_x1: evalX1[start:end],textCNN.input_x2: evalX2[start:end], textCNN.input_bluescores:evalBlueScores[start:end],textCNN.input_y:evalY[start:end],
-                     textCNN.weights:weights,textCNN.dropout_keep_prob: 1.0,textCNN.iter: iteration,textCNN.tst: True}
-        curr_eval_loss,curr_accc, logits= sess.run([textCNN.loss_val,textCNN.accuracy,textCNN.logits],feed_dict)#curr_eval_acc--->textCNN.accuracy
-        true_positive, false_positive, true_negative, false_negative=compute_confuse_matrix(logits[0], evalY[start:end][0]) #logits:[batch_size,label_size]-->logits[0]:[label_size]
-        # write_predict_error_to_file(start,file_object,logits[0], evalY[start:end][0],vocabulary_index2word,evalX1[start:end],evalX2[start:end])
-        eval_loss,eval_accc,eval_counter=eval_loss+curr_eval_loss,eval_accc+curr_accc,eval_counter+1    #注意这里计算loss和accc的方法，计算累加值，然后归一化
-        eval_true_positive,eval_false_positive=eval_true_positive+true_positive,eval_false_positive+false_positive
-        eval_true_negative,eval_false_negative=eval_true_negative+true_negative,eval_false_negative+false_negative
-        # weights_label = compute_labels_weights(weights_label, logits, evalY[start:end]) #compute_labels_weights(weights_label,logits,labels)
-    print("true_positive:",eval_true_positive,";false_positive:",eval_false_positive,";true_negative:",eval_true_negative,";false_negative:",eval_false_negative)
-    p=float(eval_true_positive)/float(eval_true_positive+eval_false_positive)
-    r=float(eval_true_positive)/float(eval_true_positive+eval_false_negative)
-    f1_score=(2*p*r)/(p+r)
-    print("eval_counter:",eval_counter,";eval_acc:",eval_accc)
-    return eval_loss/float(eval_counter),eval_accc/float(eval_counter),f1_score,p,r,weights_label
-
 def compute_confuse_matrix(logit, label):
     """
     compoute f1_score.
@@ -464,19 +470,36 @@ def compute_confuse_matrix(logit, label):
     :param evalY: [batch_size,label_size]
     :return:
     """
-    predict=np.argmax(logit)
-    true_positive=0  #TP:if label is true('1'), and predict is true('1')
-    false_positive=0 #FP:if label is false('0'),but predict is ture('1')
-    true_negative=0  #TN:if label is false('0'),and predict is false('0')
-    false_negative=0 #FN:if label is false('0'),but predict is true('1')
-    if predict==1 and label==1:
-        true_positive=1
-    elif predict==1 and label==0:
-        false_positive=1
-    elif predict==0 and label==0:
-        true_negative=1
-    elif predict==0 and label==1:
-        false_negative=1
+    # print("logit:", logit, "label", label)
+    # predict=np.argmax(logit)
+    # true_positive=0  #TP:if label is true('1'), and predict is true('1')
+    # false_positive=0 #FP:if label is false('0'),but predict is ture('1')
+    # true_negative=0  #TN:if label is false('0'),and predict is false('0')
+    # false_negative=0 #FN:if label is false('0'),but predict is true('1')
+    # if predict==1 and label==1:
+    #     true_positive=1
+    # elif predict==1 and label==0:
+    #     false_positive=1
+    # elif predict==0 and label==0:
+    #     true_negative=1
+    # elif predict==0 and label==1:
+    #     false_negative=1
+    length = len(logit)
+    for i in range(length):
+        predict = np.argmax(logit[i]); true_label = np.argmax(label[0])
+        # print(predict, true_label)
+        true_positive = 0  # TP:if label is true('1'), and predict is true('1')
+        false_positive = 0  # FP:if label is false('0'),but predict is ture('1')
+        true_negative = 0  # TN:if label is false('0'),and predict is false('0')
+        false_negative = 0  # FN:if label is false('0'),but predict is true('1')
+        if predict == 1 and true_label == 1:
+            true_positive = 1
+        elif predict == 1 and true_label == 0:
+            false_positive = 1
+        elif predict == 0 and true_label == 0:
+            true_negative = 1
+        elif predict == 0 and true_label == 1:
+            false_negative = 1
 
     return true_positive,false_positive,true_negative,false_negative
 
