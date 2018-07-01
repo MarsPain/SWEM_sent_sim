@@ -43,7 +43,7 @@ from utils import prepare_data_for_cnn, prepare_data_for_rnn, get_minibatches_id
     , _clip_gradients_seperate_norm, tensors_key_in_file, prepare_data_for_emb
 # import tempfile
 # from tensorflow.examples.tutorials.mnist import input_data
-
+from weight_boosting import compute_labels_weights,get_weights_for_current_batch,get_weights_label_as_standard_dict,init_weights_dict
 logging.set_verbosity(logging.INFO)
 # Basic model parameters as external flags.
 # flags = tf.app.flags
@@ -114,6 +114,8 @@ class Options(object):
         self.vocab_size = 80000
         self.use_pretrained_embedding = True
         self.dropout_keep_prob = 0.5
+        self.weights_label = tf.placeholder(tf.float32, [None, ], name="weights_label")  # weights
+
 
         print ('Use model %s' % self.model)
         print ('Use %d conv/deconv layers' % self.layer)
@@ -173,7 +175,8 @@ def auto_encoder(x_1, x_2, x_mask_1, x_mask_2, y, dropout, opt):
 
     correct_prediction = tf.equal(tf.argmax(prob, 1), tf.argmax(y, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=logits))
+    # loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=logits, weights=opt.weights_label))
+    loss = tf.reduce_mean(tf.losses.sparse_softmax_cross_entropy(labels=tf.argmax(y, 1), logits=logits, weights=opt.weights_label))
 
     train_op = layers.optimize_loss(
         loss,
@@ -193,7 +196,7 @@ def main():
     print("vocab_size:", vocab_size)
     num_classes = len(vocabulary_index2label);
     print("num_classes:", num_classes)
-    with open("./data/data_v1") as f:
+    with open("./cache_SWEM_1/train_valid_test.pik") as f:
         train, valid, test, true_label_percent = pickle.load(f)
     train_q, train_a, _, train_lab = train
     print("train_nums:", len(train_q))
@@ -267,23 +270,26 @@ def main():
         eval_loss, eval_accc, eval_counter = 0.0, 0.0, 0
         eval_true_positive, eval_false_positive, eval_true_negative, eval_false_negative = 0, 0, 0, 0
         # batch_size = 1
+        weights_label = {}  # weight_label[label_index]=(number,correct)
+        weights = np.ones((opt.batch_size))
         kf_train = get_minibatches_idx(len(train_q), opt.batch_size, shuffle=True)
         for _, train_index in kf_train:
             train_sents_1 = [train_q[t] for t in train_index]
             train_sents_2 = [train_a[t] for t in train_index]
             train_labels = [train_lab[t] for t in train_index]
-            train_labels = np.array(train_labels)
+            train_labels_array = np.array(train_labels)
             # print("train_labels", train_labels.shape)
             # train_labels = train_labels.reshape((len(train_labels), opt.category))
-            train_labels = np.eye(opt.category)[train_labels]
+            train_labels = np.eye(opt.category)[train_labels_array]
             x_train_batch_1, x_train_mask_1 = prepare_data_for_emb(train_sents_1, opt)
             x_train_batch_2, x_train_mask_2 = prepare_data_for_emb(train_sents_2, opt)
 
             curr_eval_loss, curr_accc, logits = sess.run([loss_, accuracy_, logits_],feed_dict={x_1_: x_train_batch_1, x_2_: x_train_batch_2, x_mask_1_: x_train_mask_1, x_mask_2_: x_train_mask_2,
-                                                           y_: train_labels, keep_prob: 1.0})
+                                                           y_: train_labels, opt.weights_label:weights, keep_prob: 1.0})
             true_positive, false_positive, true_negative, false_negative = compute_confuse_matrix(logits, train_labels)  # logits:[batch_size,label_size]-->logits[0]:[label_size]
             # write_predict_error_to_file(start,file_object,logits[0], evalY[start:end][0],vocabulary_index2word,evalX1[start:end],evalX2[start:end])
             eval_loss, eval_accc, eval_counter = eval_loss + curr_eval_loss, eval_accc + curr_accc, eval_counter + 1  # 注意这里计算loss和accc的方法，计算累加值，然后归一化
+            weights_label = compute_labels_weights(weights_label, logits, train_labels_array)  # compute_labels_weights(weights_label,logits,labels)
             eval_true_positive, eval_false_positive = eval_true_positive + true_positive, eval_false_positive + false_positive
             eval_true_negative, eval_false_negative = eval_true_negative + true_negative, eval_false_negative + false_negative
             # weights_label = compute_labels_weights(weights_label, logits, evalY[start:end]) #compute_labels_weights(weights_label,logits,labels)
@@ -298,6 +304,7 @@ def main():
 
     max_val_accuracy = 0.
     max_test_accuracy = 0.
+    weights_dict = init_weights_dict(vocabulary_label2index)  # init weights dict.
     # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=1)
     config = tf.ConfigProto(log_device_placement=False, allow_soft_placement=True)
     config.gpu_options.allow_growth = True
@@ -346,19 +353,20 @@ def main():
                     sents_1 = [train_q[t] for t in train_index] #根据索引回到总数据集中寻找相应数据
                     sents_2 = [train_a[t] for t in train_index]
                     x_labels = [train_lab[t] for t in train_index]
-                    x_labels = np.array(x_labels)
+                    x_labels_array = np.array(x_labels)
                     # print("x_labels:", x_labels.shape)
                     # 为何要在这里进行reshape,是想进行onehot操作？但是这明显是错误的，((len(x_labels),))怎么能reshape成((len(x_labels),opt.category))
                     # x_labels = x_labels.reshape((len(x_labels),opt.category))
                     # one-hot向量化
-                    x_labels = np.eye(opt.category)[x_labels]
+                    x_labels = np.eye(opt.category)[x_labels_array]
 
                     #prepare_data_for_emb函数的作用是什么?初步猜测是把sents中每一个单词替换成相应的索引，然后才能根据索引获取词向量
                     x_batch_1, x_batch_mask_1 = prepare_data_for_emb(sents_1, opt)
                     x_batch_2, x_batch_mask_2 = prepare_data_for_emb(sents_2, opt)
+                    weights = get_weights_for_current_batch(list(x_labels_array), weights_dict)
 
                     _, curr_loss, curr_accuracy = sess.run([train_op_, loss_, accuracy_], feed_dict={x_1_: x_batch_1, x_2_: x_batch_2,
-                                       x_mask_1_: x_batch_mask_1, x_mask_2_: x_batch_mask_2, y_: x_labels, keep_prob: opt.dropout_ratio})
+                                       x_mask_1_: x_batch_mask_1, x_mask_2_: x_batch_mask_2, y_: x_labels, opt.weights_label:weights, keep_prob: opt.dropout_ratio})
                     loss, acc = loss + curr_loss, acc + curr_accuracy
                     if uidx % 100 == 0:
                         print("Epoch %d\tBatch %d\tTrain Loss:%.3f\tAcc:%.3f\t" % (epoch, uidx, loss/float(uidx), acc/float(uidx)))
