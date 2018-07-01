@@ -78,7 +78,7 @@ class Options(object):
         self.layer = 3
         self.stride = [2, 2, 2]  # for two layer cnn/deconv, use self.stride[0]
         self.batch_size = 256  # 9824
-        self.max_epochs = 20
+        self.max_epochs = 50
         self.n_gan = 600  # self.filter_size * 3
         self.L = 100
         self.encoder = 'max'  # 'max' 'concat'
