@@ -71,15 +71,15 @@ class Options(object):
         self.maxlen = 69
         self.n_words = None
         self.filter_shape = 5
-        self.filter_size = 300
+        self.filter_size = 200
         self.multiplier = 2  # filtersize multiplier
         self.embed_size = 300
         self.lr = 3e-4
         self.layer = 3
         self.stride = [2, 2, 2]  # for two layer cnn/deconv, use self.stride[0]
-        self.batch_size = 200  # 9824
-        self.max_epochs = 5000
-        self.n_gan = 500  # self.filter_size * 3
+        self.batch_size = 256  # 9824
+        self.max_epochs = 20
+        self.n_gan = 600  # self.filter_size * 3
         self.L = 100
         self.encoder = 'max'  # 'max' 'concat'
         self.combine_enc = 'mix'
@@ -112,7 +112,6 @@ class Options(object):
         self.traning_data_path = "data/atec_nlp_sim_train_data.csv"
         self.sentence_len = 39
         self.vocab_size = 80000
-        self.num_epochs = 10
         self.use_pretrained_embedding = True
         self.dropout_keep_prob = 0.5
 
@@ -248,7 +247,7 @@ def main():
         print('No embedding file found.')
         opt.fix_emb = False
 
-    with tf.device('/gpu:1'):
+    with tf.device('/gpu:0'):
         #注意训练数据是两批句子，所以x的占位符要成对定义
         x_1_ = tf.placeholder(tf.int32, shape=[opt.batch_size, opt.maxlen])
         x_2_ = tf.placeholder(tf.int32, shape=[opt.batch_size, opt.maxlen])
@@ -296,7 +295,7 @@ def main():
         print("eval_counter:", eval_counter, ";eval_acc:", eval_accc)
         return eval_loss / float(eval_counter), eval_accc / float(eval_counter), f1_score, p, r
 
-    uidx = 0
+
     max_val_accuracy = 0.
     max_test_accuracy = 0.
     # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=1)
@@ -337,10 +336,10 @@ def main():
                 sess.run(tf.global_variables_initializer())
 
         try:
-            best_acc = 2.0; best_f1_score = 2.0
+            best_acc = 0; best_f1_score = 0
             for epoch in range(opt.max_epochs):
                 print("Starting epoch %d" % epoch)
-                loss, acc = 0.0, 0.0
+                loss, acc, uidx = 0.0, 0.0, 0.0
                 kf = get_minibatches_idx(len(train_q), opt.batch_size, shuffle=True)    #随机创建minibatch数据
                 for _, train_index in kf:
                     uidx += 1
@@ -379,6 +378,8 @@ def main():
                         saver.save(sess, save_path, global_step=epoch)
                         best_acc = eval_accc
                         best_f1_score = f1_scoree
+            test_loss, acc_t, f1_score_t, precision, recall, weights_label = do_eval(sess, test_q, test_a, test_lab)
+            print("Test Loss:%.3f\tAcc:%.3f\tF1 Score:%.3f\tPrecision:%.3f\tRecall:%.3f:" % (test_loss, acc_t, f1_score_t, precision, recall))
 
                     #每训练valid_freq个minibatch就在训练集、验证集和测试集上计算准确率，并更新最优测试集准确率
             #         if uidx % opt.valid_freq == 0:
