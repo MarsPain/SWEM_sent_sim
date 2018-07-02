@@ -78,7 +78,7 @@ class Options(object):
         self.layer = 3
         self.stride = [2, 2, 2]  # for two layer cnn/deconv, use self.stride[0]
         self.batch_size = 256  # 9824
-        self.max_epochs = 50
+        self.max_epochs = 30
         self.n_gan = 600  # self.filter_size * 3
         self.L = 100
         self.encoder = 'max'  # 'max' 'concat'
@@ -299,7 +299,7 @@ def main():
         r = float(eval_true_positive) / float(eval_true_positive + eval_false_negative)
         f1_score = (2 * p * r) / (p + r)
         print("eval_counter:", eval_counter, ";eval_acc:", eval_accc)
-        return eval_loss / float(eval_counter), eval_accc / float(eval_counter), f1_score, p, r
+        return eval_loss / float(eval_counter), eval_accc / float(eval_counter), f1_score, p, r, weights_label
 
 
     max_val_accuracy = 0.
@@ -373,8 +373,8 @@ def main():
 
                 if epoch % 1 == 0:
                     # do_eval参数待修改
-                    eval_loss, eval_accc, f1_scoree, precision, recall = do_eval(sess, train_q, train_a, train_lab)
-                    # weights_dict = get_weights_label_as_standard_dict(weights_label)
+                    eval_loss, eval_accc, f1_scoree, precision, recall, weights_label = do_eval(sess, train_q, train_a, train_lab)
+                    weights_dict = get_weights_label_as_standard_dict(weights_label)
                     # print("label accuracy(used for label weight):==========>>>>", weights_dict)
                     print("【Validation】Epoch %d\t Loss:%.3f\tAcc %.3f\tF1 Score:%.3f\tPrecision:%.3f\tRecall:%.3f" % (
                         epoch, eval_loss, eval_accc, f1_scoree, precision, recall))

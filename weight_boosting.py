@@ -69,8 +69,8 @@ def init_weights_dict(vocabulary_label2index):
     return weights_dict
 
 def init_weights_dict(weights_dict):
-    weights_dict[TRUE_LABEL_INDEX]=0.7777 #TODO TODO TODO TODO
-    weights_dict[FALSE_LABEL_INDEX] = 1.0
+    weights_dict[TRUE_LABEL_INDEX]=0.2 #TODO TODO TODO TODO
+    weights_dict[FALSE_LABEL_INDEX] = 0.8
     return weights_dict
 
 TRUE_LABEL_INDEX=1
